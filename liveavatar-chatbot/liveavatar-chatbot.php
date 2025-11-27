@@ -16,8 +16,6 @@ class LiveAvatar_Chatbot_Plugin {
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_action('wp_ajax_liveavatar_create_session', array($this, 'ajax_create_session'));
         add_action('wp_ajax_nopriv_liveavatar_create_session', array($this, 'ajax_create_session'));
-        add_action('wp_ajax_liveavatar_send_text', array($this, 'ajax_send_text'));
-        add_action('wp_ajax_nopriv_liveavatar_send_text', array($this, 'ajax_send_text'));
     }
 
     public function add_settings_page() {
@@ -147,80 +145,10 @@ class LiveAvatar_Chatbot_Plugin {
 
         $session_token = $body['data']['session_token'];
 
-        // 2) Start Session — NEW API
-        $start_response = wp_remote_post('https://api.liveavatar.com/v1/sessions/start', array(
-            'headers' => array(
-                'accept'        => 'application/json',
-                'authorization' => 'Bearer ' . $session_token
-            ),
-            'timeout' => 30
-        ));
-
-        $start_raw = wp_remote_retrieve_body($start_response);
-        $start = json_decode($start_raw, true);
-
-        error_log("🔍 START RESPONSE: " . $start_raw);
-
-        if (!isset($start['data']['livekit_url']) || !isset($start['data']['livekit_client_token'])) {
-            wp_send_json_error(array(
-                'message'  => 'LiveKit details missing.',
-                'response' => $start
-            ), 500);
-        }
-
         wp_send_json_success(array(
-            'livekit_url'   => $start['data']['livekit_url'],
-            'livekit_token' => $start['data']['livekit_client_token'],
-            'session_id'    => $start['data']['session_id'] ?? $session_token // Fallback to token if ID not explicit
+            'session_token' => $session_token,
+            'session_id'    => $session_token
         ));
-    }
-
-    public function ajax_send_text() {
-        $api_key = trim(get_option('liveavatar_api_key'));
-        $message = isset($_POST['message']) ? sanitize_text_field($_POST['message']) : '';
-        $session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
-
-        if (!$api_key) {
-            wp_send_json_error(array('message' => 'API Key missing'), 401);
-        }
-        if (!$message) {
-            wp_send_json_error(array('message' => 'Message is empty'), 400);
-        }
-        // Note: Some APIs might require session_id. If the JS doesn't have it yet, 
-        // we might need to rely on the token or just pass what we have.
-        // For now, we'll assume the endpoint is /v1/sessions/chat and it might need a session_id or just the token.
-        // If the user is using the HeyGen API directly, the endpoint might be different.
-        // Using the assumed endpoint from the plan.
-
-        $payload = array(
-            'session_id' => $session_id,
-            'text' => $message,
-            'task_type' => 'talk'
-        );
-
-        // Using the streaming.task endpoint as requested
-        $response = wp_remote_post('https://api.liveavatar.com/v1/streaming.task', array(
-            'headers' => array(
-                'X-API-KEY'    => $api_key, // Keeping X-API-KEY as per other endpoints, assuming consistent auth
-                'accept'       => 'application/json',
-                'content-type' => 'application/json'
-            ),
-            'body'    => json_encode($payload),
-            'timeout' => 30
-        ));
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(array('message' => $response->get_error_message()), 500);
-        }
-
-        $body_raw = wp_remote_retrieve_body($response);
-        $body = json_decode($body_raw, true);
-
-        if (isset($body['error'])) {
-             wp_send_json_error($body, 400);
-        }
-
-        wp_send_json_success($body);
     }
 }
 
